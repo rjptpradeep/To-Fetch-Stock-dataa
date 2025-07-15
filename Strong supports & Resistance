@@ -1,0 +1,118 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from alpha_vantage.timeseries import TimeSeries
+from scipy.signal import argrelextrema
+from datetime import datetime
+
+# 1. Fetch stock data from Alpha Vantage
+def get_stock_data(symbol, api_key):
+    ts = TimeSeries(key=api_key, output_format='pandas')
+    data, _ = ts.get_daily(symbol=symbol, outputsize='full')
+    data = data.rename(columns={
+        '1. open': 'Open',
+        '2. high': 'High',
+        '3. low': 'Low',
+        '4. close': 'Close',
+        '5. volume': 'Volume'
+    })
+    data.sort_index(inplace=True)
+    return data
+
+# 2. Identify support/resistance
+def find_support_resistance(data, order=5):
+    data = data.copy()
+    minima_idx = argrelextrema(data['Low'].values, np.less_equal, order=order)[0]
+    maxima_idx = argrelextrema(data['High'].values, np.greater_equal, order=order)[0]
+
+    data['Support'] = np.nan
+    data['Resistance'] = np.nan
+    data.loc[data.index[minima_idx], 'Support'] = data['Low'].iloc[minima_idx]
+    data.loc[data.index[maxima_idx], 'Resistance'] = data['High'].iloc[maxima_idx]
+    return data
+
+# 3. Touch count filter
+def get_frequent_levels(data, levels, min_touches=3, lookback_days=45, tolerance=0.01):
+    recent_data = data.tail(lookback_days)
+    strong_levels = []
+    for lvl in levels:
+        touches = ((np.abs(recent_data['Close'] - lvl) / lvl) < tolerance).sum()
+        if touches >= min_touches:
+            strong_levels.append((lvl, touches))
+    return strong_levels
+
+# 4. Identify breakouts above strong levels
+def identify_breakouts(data, support_levels, resistance_levels, tolerance=0.01):
+    breakout_points = []
+    recent_data = data.tail(45)
+    for i in range(len(recent_data)):
+        close = recent_data['Close'].iloc[i]
+        date = recent_data.index[i]
+        for lvl, _ in resistance_levels:
+            if abs(close - lvl) / lvl < tolerance and close > lvl:
+                breakout_points.append((date, close, 'Breakout Up'))
+        for lvl, _ in support_levels:
+            if abs(close - lvl) / lvl < tolerance and close < lvl:
+                breakout_points.append((date, close, 'Breakout Down'))
+    return breakout_points
+
+# 5. Plot levels and breakouts
+def plot_support_resistance(data, support_levels, resistance_levels, breakout_points):
+    plt.figure(figsize=(14,7))
+    plt.plot(data['Close'], label='Close Price', color='blue')
+
+    for idx, (lvl, count) in enumerate(support_levels):
+        plt.axhline(lvl, color='green', linestyle='--', alpha=0.5,
+                    label=f'Support ({lvl:.2f}, {count} touches)' if idx == 0 else "")
+        
+    for idx, (lvl, count) in enumerate(resistance_levels):
+        plt.axhline(lvl, color='red', linestyle='--', alpha=0.5,
+                    label=f'Resistance ({lvl:.2f}, {count} touches)' if idx == 0 else "")
+
+    for point in breakout_points:
+        color = 'lime' if point[2] == 'Breakout Up' else 'orange'
+        plt.scatter(point[0], point[1], label=point[2], marker='o', s=100, edgecolors='black', color=color)
+
+    plt.title('Support, Resistance and Breakouts (Touch Count ≥ 3, ±1%)')
+    plt.xlabel('Date')
+    plt.ylabel('Price')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+# -----------------------------
+# 🧪 USAGE
+
+symbol = 'RELIANCE.BSE'         # You can change to any other symbol
+api_key = 'YOUR_API_KEY_HERE'   # Replace with your Alpha Vantage API key
+
+start_date = '2024-10-01'
+end_date = '2025-05-07'
+
+data = get_stock_data(symbol, api_key)
+data = data.loc[start_date:end_date]
+
+data = find_support_resistance(data)
+
+support_candidates = data['Support'].dropna().unique()
+resistance_candidates = data['Resistance'].dropna().unique()
+
+strong_supports = get_frequent_levels(data, support_candidates)
+strong_resistances = get_frequent_levels(data, resistance_candidates)
+
+# 🔎 Breakouts
+breakouts = identify_breakouts(data, strong_supports, strong_resistances)
+
+# 📈 Plot
+plot_support_resistance(data, strong_supports, strong_resistances, breakouts)
+
+# 📤 Export support/resistance levels
+pd.DataFrame(strong_supports, columns=['Level', 'TouchCount']).to_csv('strong_supports.csv', index=False)
+pd.DataFrame(strong_resistances, columns=['Level', 'TouchCount']).to_csv('strong_resistances.csv', index=False)
+
+# 📤 Export breakout points
+breakout_df = pd.DataFrame(breakouts, columns=['Date', 'Price', 'Type'])
+breakout_df.to_csv('breakout_points.csv', index=False)
+
+print("✅ All data exported: 'strong_supports.csv', 'strong_resistances.csv', 'breakout_points.csv'")
+

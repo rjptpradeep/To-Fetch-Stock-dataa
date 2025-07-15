@@ -1,0 +1,249 @@
+# import pandas as pd
+# import numpy as np
+# import matplotlib.pyplot as plt
+# import yfinance as yf
+# from scipy.signal import argrelextrema
+
+# def get_stock_data(symbol, start, end):
+#     data = yf.download(symbol, start=start, end=end, progress=False)
+#     return data
+
+# def find_support_resistance(data, order=5):
+#     minima_idx = argrelextrema(data['Low'].values, np.less_equal, order=order)[0]
+#     maxima_idx = argrelextrema(data['High'].values, np.greater_equal, order=order)[0]
+
+#     data['Support'] = np.nan
+#     data['Resistance'] = np.nan
+
+#     data.loc[data.index[minima_idx], 'Support'] = data['Low'].iloc[minima_idx]
+#     data.loc[data.index[maxima_idx], 'Resistance'] = data['High'].iloc[maxima_idx]
+
+#     return data
+
+# def filter_strong_levels(levels, tolerance=0.01):
+#     """Keep only strong support/resistance levels touched multiple times"""
+#     strong_levels = []
+#     levels = sorted(levels)
+#     for lvl in levels:
+#         nearby = [l for l in levels if abs(l - lvl) / lvl < tolerance]
+#         if len(nearby) >= 2 and lvl not in strong_levels:
+#             strong_levels.append(lvl)
+#     return strong_levels
+
+# def identify_breakouts(data, support_levels, resistance_levels, tolerance=0.01):
+#     breakout_points = []
+
+#     # Calculate average 20-day volume
+#     data['AvgVolume20'] = data['Volume'].rolling(window=20).mean()
+
+#     for i in range(len(data)):
+#         close = data['Close'].iloc[i]
+#         volume = float(data['Volume'].iloc[i])         # 👈 converted to float
+#         avg_volume = float(data['AvgVolume20'].iloc[i]) if pd.notna(data['AvgVolume20'].iloc[i]) else None
+
+#         if avg_volume is not None:
+#             if volume > 1.2 * avg_volume:
+#                 if any(abs(close - r) / r < tolerance for r in resistance_levels):
+#                     breakout_points.append((data.index[i], close, 'Breakout Up'))
+#                 elif any(abs(close - s) / s < tolerance for s in support_levels):
+#                     breakout_points.append((data.index[i], close, 'Breakout Down'))
+
+#     return breakout_points
+
+
+
+# def plot_support_resistance(data, breakout_points, support_levels, resistance_levels):
+#     plt.figure(figsize=(14,7))
+#     plt.plot(data['Close'], label='Close Price', color='blue')
+
+#     # Plot support and resistance points
+#     plt.scatter(data.index, data['Support'], label='Support Points', color='green', marker='^', alpha=1)
+#     plt.scatter(data.index, data['Resistance'], label='Resistance Points', color='red', marker='v', alpha=1)
+
+#     # Draw horizontal lines for strong levels
+#     for idx, lvl in enumerate(support_levels):
+#         plt.axhline(lvl, color='green', linestyle='--', alpha=0.5, label='Support Level' if idx==0 else "")
+#     for idx, lvl in enumerate(resistance_levels):
+#         plt.axhline(lvl, color='red', linestyle='--', alpha=0.5, label='Resistance Level' if idx==0 else "")
+
+#     # Plot breakout points
+#     for point in breakout_points:
+#         color = 'lime' if point[2] == 'Breakout Up' else 'orange'
+#         plt.scatter(point[0], point[1], label=point[2], marker='o', s=100, edgecolors='black', color=color)
+
+#     plt.title('Support, Resistance, and Breakouts (Volume Confirmed)')
+#     plt.xlabel('Date')
+#     plt.ylabel('Price')
+#     plt.legend()
+#     plt.show()
+
+# # -----------------------------
+# # 🛠 Usage:
+
+# symbol = 'RELIANCE.NS'  # example: Apple stock
+# start = '2024-01-01'
+# end = '2024-09-09'
+
+# data = get_stock_data(symbol, start, end)
+# data = find_support_resistance(data)
+
+# # Find strong support/resistance levels
+# support_levels = filter_strong_levels(data['Support'].dropna())
+# resistance_levels = filter_strong_levels(data['Resistance'].dropna())
+
+# breakout_points = identify_breakouts(data, support_levels, resistance_levels)
+# plot_support_resistance(data, breakout_points, support_levels, resistance_levels)
+
+# # 🔽 Convert breakout points to DataFrame
+# breakout_df = pd.DataFrame(breakout_points, columns=['Date', 'Price', 'Type'])
+
+
+# # Check Breakout Points Exist
+# print(f"Total breakout points found: {len(breakout_points)}")
+
+# # 🔽 Export to CSV
+# breakout_df.to_csv('breakout_points.csv', index=False)
+# print("✅ Breakout points exported to 'breakout_points.csv'")
+
+#_______________________________________________________________
+#2 By using different data source
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from alpha_vantage.timeseries import TimeSeries
+from scipy.signal import argrelextrema
+
+# 🔐 Replace this with your actual Alpha Vantage API key
+API_KEY = 'YOUR_ALPHA_VANTAGE_API_KEY'
+
+def get_stock_data(symbol):
+    ts = TimeSeries(key=API_KEY, output_format='pandas')
+    data, meta_data = ts.get_daily(symbol=symbol, outputsize='full')  # 'compact' or 'full'
+    
+
+    data = data.rename(columns={
+        '1. open': 'Open',
+        '2. high': 'High',
+        '3. low': 'Low',
+        '4. close': 'Close',
+        '5. volume': 'Volume'
+    })
+    data.index.name = 'Date'
+    return data.sort_index()
+
+def find_support_resistance(data, order=5):
+    minima_idx = argrelextrema(data['Low'].values, np.less_equal, order=order)[0]
+    maxima_idx = argrelextrema(data['High'].values, np.greater_equal, order=order)[0]
+
+    data['Support'] = np.nan
+    data['Resistance'] = np.nan
+
+    data.loc[data.index[minima_idx], 'Support'] = data['Low'].iloc[minima_idx]
+    data.loc[data.index[maxima_idx], 'Resistance'] = data['High'].iloc[maxima_idx]
+
+    return data
+
+def filter_strong_levels(levels, tolerance=0.01):
+    strong_levels = []
+    levels = sorted(levels)
+    for lvl in levels:
+        nearby = [l for l in levels if abs(l - lvl) / lvl < tolerance]
+        if len(nearby) >= 2 and lvl not in strong_levels:
+            strong_levels.append(lvl)
+    return strong_levels
+
+# def identify_breakouts(data, support_levels, resistance_levels, tolerance=0.01):
+#     breakout_points = []
+#     data['AvgVolume20'] = data['Volume'].rolling(window=20).mean()
+
+#     for i in range(len(data)):
+#         close = data['Close'].iloc[i]
+#         volume = float(data['Volume'].iloc[i])
+#         avg_volume = float(data['AvgVolume20'].iloc[i]) if pd.notna(data['AvgVolume20'].iloc[i]) else None
+
+#         if avg_volume is not None:
+#             if volume > 1.2 * avg_volume:
+#                 if any(abs(close - r) / r < tolerance for r in resistance_levels):
+#                     breakout_points.append((data.index[i], close, 'Breakout Up'))
+#                 elif any(abs(close - s) / s < tolerance for s in support_levels):
+#                     breakout_points.append((data.index[i], close, 'Breakout Down'))
+
+#     return breakout_points
+def identify_breakouts(data, support_levels, resistance_levels, tolerance=0.01):
+    breakout_points = []
+    data['AvgVolume20'] = data['Volume'].rolling(window=20).mean()
+
+    for i in range(len(data)):
+        close = data['Close'].iloc[i]
+        volume = float(data['Volume'].iloc[i])
+        avg_volume = float(data['AvgVolume20'].iloc[i]) if pd.notna(data['AvgVolume20'].iloc[i]) else None
+        date = data.index[i]
+
+        if avg_volume is not None and volume > 1.2 * avg_volume:
+            # Check resistance
+            for r in resistance_levels:
+                if abs(close - r) / r < tolerance:
+                    breakout_points.append((date, close, 'Breakout Up', f'Near Resistance {r:.2f}'))
+                    break
+            # Check support
+            for s in support_levels:
+                if abs(close - s) / s < tolerance:
+                    breakout_points.append((date, close, 'Breakout Down', f'Near Support {s:.2f}'))
+                    break
+
+    return breakout_points
+
+
+def plot_support_resistance(data, breakout_points, support_levels, resistance_levels):
+    plt.figure(figsize=(14, 7))
+    plt.plot(data['Close'], label='Close Price', color='blue')
+    plt.scatter(data.index, data['Support'], label='Support Points', color='green', marker='^')
+    plt.scatter(data.index, data['Resistance'], label='Resistance Points', color='red', marker='v')
+
+    for idx, lvl in enumerate(support_levels):
+        plt.axhline(lvl, color='green', linestyle='--', alpha=0.5, label='Support Level' if idx==0 else "")
+    for idx, lvl in enumerate(resistance_levels):
+        plt.axhline(lvl, color='red', linestyle='--', alpha=0.5, label='Resistance Level' if idx==0 else "")
+
+    for point in breakout_points:
+        color = 'lime' if point[2] == 'Breakout Up' else 'orange'
+        plt.scatter(point[0], point[1], label=point[2], marker='o', s=100, edgecolors='black', color=color)
+
+    plt.title('Support, Resistance, and Breakouts (Volume Confirmed)')
+    plt.xlabel('Date')
+    plt.ylabel('Price')
+    plt.legend()
+    plt.show()
+
+
+# -----------------------------
+# ⚙️ USAGE EXAMPLE
+
+symbol = 'RELIANCE.BSE'  # or 'RELIANCE.NSE' depending on listing
+start_date = '2024-10-01'
+end_date = '2025-05-07'
+
+data = get_stock_data(symbol)
+data = data.loc[start_date:end_date]
+
+
+data = find_support_resistance(data)
+support_levels = filter_strong_levels(data['Support'].dropna())
+resistance_levels = filter_strong_levels(data['Resistance'].dropna())
+
+breakout_points = identify_breakouts(data, support_levels, resistance_levels)
+plot_support_resistance(data, breakout_points, support_levels, resistance_levels)
+
+# # Export breakouts to CSV
+# breakout_df = pd.DataFrame(breakout_points, columns=['Date', 'Price', 'Type'])
+# breakout_df.to_csv('breakout_points.csv', index=False)
+# print(f"✅ {len(breakout_df)} breakout points exported to 'breakout_points.csv'")
+
+# 🔽 Convert breakout points to DataFrame
+breakout_df = pd.DataFrame(breakout_points, columns=['Date', 'Price', 'Type', 'Support/Resistance Remark'])
+
+# 🔽 Export to CSV
+breakout_df.to_csv('breakout_points.csv', index=False)
+print(f"✅ {len(breakout_df)} breakout points exported to 'breakout_points.csv'")
+
+

@@ -1,0 +1,26 @@
+import pandas as pd
+from alpha_vantage.timeseries import TimeSeries
+
+# Step 1: Initialize Alpha Vantage API
+api_key = 'YOUR_API_KEY'  # Replace with your Alpha Vantage key
+ts = TimeSeries(key=api_key, output_format='pandas')
+
+# Step 2: Fetch full historical daily data
+symbol = 'RELIANCE.BSE'  # or use 'RELIANCE.NS' for NSE
+data, meta_data = ts.get_daily(symbol=symbol, outputsize='full')
+
+# Step 3: Clean and format the DataFrame
+data = data.rename(columns={
+    '1. open': 'Open',
+    '2. high': 'High',
+    '3. low': 'Low',
+    '4. close': 'Close',
+    '5. volume': 'Volume'
+})
+data.index.name = 'Date'
+data = data.sort_index()  # Optional: sort from oldest to newest
+
+# Step 4: Export to Excel
+filename = f"{symbol.replace('.', '_')}_historical_data.xlsx"
+data.to_excel(filename)
+print(f"✅ Data for {symbol} saved to '{filename}'")
